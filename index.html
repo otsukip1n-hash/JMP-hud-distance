@@ -1,362 +1,182 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="航空距離計">
-    <title>航空機用距離計測システム</title>
-    <style>
-        /* フォント読み込み - デジタル計器風 */
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap');
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>航空距離計測HUD</title>
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
+<style>
+body{margin:0;overflow:hidden;background:black;color:#0f0;font-family:sans-serif}
+#camera{position:fixed;width:100vw;height:100vh;object-fit:cover}
 
-        body {
-            font-family: 'Rajdhani', sans-serif;
-            overflow: hidden;
-            background: #000;
-            color: #0f0;
-            user-select: none;
-            -webkit-user-select: none;
-        }
+.crosshair{
+position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+width:80px;height:80px
+}
+.crosshair::before,.crosshair::after{
+content:"";position:absolute;background:#0f0
+}
+.crosshair::before{width:2px;height:100%;left:50%}
+.crosshair::after{height:2px;width:100%;top:50%}
 
-        /* カメラ映像 */
-        #camera {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            object-fit: cover;
-            z-index: 1;
-        }
+.distance-display{
+position:absolute;top:20px;left:20px;
+border:2px solid #0f0;padding:10px;font-size:36px
+}
 
-        /* HUDオーバーレイ */
-        #hud {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: 10;
-            pointer-events: none;
-        }
+.range-bar-container{
+position:absolute;right:30px;top:150px;height:65%;width:50px
+}
 
-        /* 中央十字照準 */
-        .crosshair {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 80px;
-            height: 80px;
-        }
+.range-bar{
+position:relative;width:100%;height:100%;
+border:2px solid #0f0
+}
 
-        .crosshair::before,
-        .crosshair::after {
-            content: '';
-            position: absolute;
-            background: #00ff41;
-            box-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41;
-            transition: background 0.3s, box-shadow 0.3s;
-        }
+.range-indicator{
+position:absolute;
+left:50%;
+width:18px;height:18px;
+background:red;border-radius:50%;
+transform:translateX(-50%);
+transition:bottom .15s linear;
+}
 
-        .crosshair.alert::before,
-        .crosshair.alert::after {
-            background: #ffcc00;
-            box-shadow: 0 0 10px #ffcc00, 0 0 20px #ffcc00;
-        }
+.status{
+position:absolute;top:20px;right:20px
+}
 
-        .crosshair::before {
-            width: 2px;
-            height: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-        }
+button{
+position:absolute;top:90px;right:20px;
+background:black;border:2px solid #0f0;color:#0f0;padding:8px
+}
 
-        .crosshair::after {
-            height: 2px;
-            width: 100%;
-            top: 50%;
-            transform: translateY(-50%);
-        }
+.permission{
+position:fixed;inset:0;
+display:flex;flex-direction:column;
+justify-content:center;align-items:center;
+background:black;z-index:999
+}
 
-        .crosshair-circle {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 40px;
-            height: 40px;
-            border: 2px solid #00ff41;
-            border-radius: 50%;
-            box-shadow: 0 0 10px #00ff41, inset 0 0 10px #00ff41;
-            transition: border-color 0.3s, box-shadow 0.3s;
-        }
+.permission button{
+font-size:22px;margin-top:20px
+}
+</style>
+</head>
+<body>
 
-        .crosshair.alert .crosshair-circle {
-            border-color: #ffcc00;
-            box-shadow: 0 0 10px #ffcc00, inset 0 0 10px #ffcc00;
-        }
+<div class="permission" id="perm">
+<h1>航空距離計測HUD</h1>
+<button id="start">起動</button>
+</div>
 
-        /* 左上: 距離表示 */
-        .distance-display {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            border: 2px solid #00ff41;
-            padding: 15px 25px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 255, 65, 0.5), inset 0 0 10px rgba(0, 255, 65, 0.2);
-            pointer-events: all;
-        }
+<video id="camera" autoplay playsinline></video>
 
-        .distance-label {
-            font-size: 14px;
-            font-weight: 300;
-            color: #00ff41;
-            margin-bottom: 5px;
-            letter-spacing: 2px;
-        }
+<div class="crosshair"></div>
 
-        .distance-value {
-            font-family: 'Orbitron', monospace;
-            font-size: 48px;
-            font-weight: 900;
-            color: #00ff41;
-            text-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41;
-            line-height: 1;
-        }
+<div class="distance-display">
+<span id="dist">----</span> m
+</div>
 
-        .distance-unit {
-            font-size: 24px;
-            margin-left: 5px;
-        }
+<div class="range-bar-container">
+<div class="range-bar" id="bar">
+<div class="range-indicator" id="indicator"></div>
+</div>
+</div>
 
-        /* 右側: レンジバー */
-        .range-bar-container {
-            position: absolute;
-            right: 30px;
-            top: 180px;
-            height: 60%;
-            width: 60px;
-            pointer-events: all;
-        }
+<div class="status">
+角度: <span id="angle">--</span>°
+</div>
 
-        .range-bar {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(to top, rgba(0, 255, 65, 0.1), rgba(255, 0, 0, 0.1));
-            border: 2px solid #00ff41;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 255, 65, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.8);
-            box-sizing: border-box;
-        }
+<button id="zero">水平ゼロ</button>
 
-        .range-marker {
-            position: absolute;
-            width: calc(100% - 4px);
-            height: 2px;
-            background: rgba(0, 255, 65, 0.6);
-            left: 2px;
-        }
+<script>
+const camera=document.getElementById("camera")
+const distEl=document.getElementById("dist")
+const angleEl=document.getElementById("angle")
+const indicator=document.getElementById("indicator")
+const bar=document.getElementById("bar")
+const perm=document.getElementById("perm")
 
-        .range-label {
-            position: absolute;
-            right: 70px;
-            font-size: 14px;
-            color: #00ff41;
-            transform: translateY(-50%);
-            font-weight: 500;
-            text-shadow: 0 0 5px #00ff41;
-        }
+const startBtn=document.getElementById("start")
+const zeroBtn=document.getElementById("zero")
 
-        .range-indicator {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            background: #ff0044;
-            border: 3px solid #fff;
-            border-radius: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 15px #ff0044, 0 0 30px #ff0044;
-            transition: bottom 0.3s ease-out;
-            z-index: 2;
-        }
+let zeroOffset=0
+let filteredAngle=0
 
-        /* 設定パネル - 中央に配置 */
-        .control-panel {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9);
-            border: 2px solid #00ff41;
-            padding: 20px 25px;
-            border-radius: 15px;
-            box-shadow: 0 0 30px rgba(0, 255, 65, 0.5);
-            pointer-events: all;
-            max-width: 90vw;
-            max-height: 80vh;
-            overflow-y: auto;
-            transition: opacity 0.3s, transform 0.3s;
-            z-index: 100;
-        }
+const aircraftAlt=10000 * 0.3048
+const targetAlt=0
+const maxRange=5000
 
-        .control-panel.hidden {
-            opacity: 0;
-            transform: translate(-50%, -50%) scale(0.9);
-            pointer-events: none;
-        }
+startBtn.onclick=async()=>{
+if(DeviceOrientationEvent.requestPermission){
+const p=await DeviceOrientationEvent.requestPermission()
+if(p!=="granted") return
+}
+perm.style.display="none"
 
-        .toggle-panel-btn {
-            position: absolute;
-            bottom: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            border: 2px solid #00ff41;
-            color: #00ff41;
-            padding: 10px 20px;
-            border-radius: 10px;
-            font-family: 'Rajdhani', sans-serif;
-            font-size: 16px;
-            font-weight: 700;
-            cursor: pointer;
-            pointer-events: all;
-            box-shadow: 0 0 15px rgba(0, 255, 65, 0.5);
-            transition: all 0.3s;
-            z-index: 50;
-        }
+const stream=await navigator.mediaDevices.getUserMedia({
+video:{facingMode:"environment"}
+})
+camera.srcObject=stream
 
-        .toggle-panel-btn:active {
-            transform: translateX(-50%) scale(0.95);
-        }
-        
-        .toggle-panel-btn.panel-open {
-            opacity: 0.5;
-        }
+window.addEventListener("deviceorientation",handle,true)
+}
 
-        .control-row {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
+zeroBtn.onclick=()=>zeroOffset=filteredAngle
 
-        .control-label {
-            font-size: 14px;
-            color: #00ff41;
-            min-width: 120px;
-            font-weight: 500;
-        }
+function handle(e){
 
-        .control-input {
-            background: rgba(0, 0, 0, 0.6);
-            border: 1px solid #00ff41;
-            color: #00ff41;
-            padding: 8px 12px;
-            border-radius: 5px;
-            font-family: 'Orbitron', monospace;
-            font-size: 14px;
-            width: 100px;
-        }
+let pitch
 
-        .control-btn {
-            background: rgba(0, 255, 65, 0.2);
-            border: 2px solid #00ff41;
-            color: #00ff41;
-            padding: 10px 18px;
-            border-radius: 8px;
-            font-family: 'Rajdhani', sans-serif;
-            font-size: 14px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
+if(window.innerWidth>window.innerHeight){
+pitch=e.gamma
+}else{
+pitch=e.beta
+}
 
-        .control-btn:active {
-            transform: scale(0.95);
-            background: rgba(0, 255, 65, 0.4);
-        }
+if(pitch==null) return
 
-        .control-btn.small {
-            padding: 5px 12px;
-            font-size: 16px;
-            min-width: 40px;
-        }
+const angle=pitch-zeroOffset
 
-        .calibration-display {
-            font-family: 'Orbitron', monospace;
-            font-size: 18px;
-            color: #00ff41;
-            margin: 0 10px;
-            text-shadow: 0 0 5px #00ff41;
-        }
+filteredAngle+= (angle-filteredAngle)*0.15
 
-        /* センサー許可オーバーレイ */
-        .permission-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: linear-gradient(135deg, #000 0%, #001a00 100%);
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
+angleEl.textContent=filteredAngle.toFixed(1)
 
-        .permission-overlay.hidden {
-            display: none;
-        }
+const rad=filteredAngle*Math.PI/180
 
-        .system-title {
-            font-family: 'Orbitron', monospace;
-            font-size: 32px;
-            font-weight: 900;
-            color: #00ff41;
-            text-align: center;
-            margin-bottom: 30px;
-            text-shadow: 0 0 20px #00ff41, 0 0 40px #00ff41;
-            letter-spacing: 4px;
-        }
+if(rad<=0){
+distEl.textContent="----"
+return
+}
 
-        .permission-text {
-            font-size: 18px;
-            color: #00ff41;
-            text-align: center;
-            margin-bottom: 40px;
-            max-width: 400px;
-            line-height: 1.6;
-        }
+const heightDiff=aircraftAlt-targetAlt
 
-        .start-btn {
-            background: rgba(0, 255, 65, 0.3);
-            border: 3px solid #00ff41;
-            color: #00ff41;
-            padding: 20px 50px;
-            border-radius: 15px;
-            font-family: 'Orbitron', monospace;
-            font-size: 24px;
-            font-weight: 900;
-            cursor: pointer;
+const distance=heightDiff/Math.tan(rad)
+
+if(!isFinite(distance)||distance<0){
+distEl.textContent="----"
+return
+}
+
+const d=Math.min(distance,maxRange)
+
+distEl.textContent=d.toFixed(0)
+
+updateIndicator(d)
+}
+
+function updateIndicator(distance){
+
+const h=bar.clientHeight
+
+const ratio=Math.min(distance/maxRange,1)
+
+indicator.style.bottom=`${ratio*h}px`
+}
+</script>
+</body>
+</html>r: pointer;
             text-transform: uppercase;
             letter-spacing: 3px;
             box-shadow: 0 0 30px rgba(0, 255, 65, 0.6), inset 0 0 20px rgba(0, 255, 65, 0.2);
