@@ -715,7 +715,7 @@
                 // 横線
                 const line = document.createElement('div');
                 line.className = 'range-marker';
-                line.style.bottom = percentage + '%';
+                line.style.bottom = percentage + 3 + '%';
                 rangeBar.appendChild(line);
                 
                 // ラベル
@@ -748,7 +748,7 @@
             } else {
                 // バーの下端が最大値、上端が0
                 const percentage = ((maxRange - distance) / maxRange) * 100;
-                rangeIndicator.style.bottom = percentage + '%';
+                rangeIndicator.style.bottom = percentage - 5 + '%';
             }
         }
 
